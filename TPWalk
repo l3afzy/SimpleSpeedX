@@ -1,0 +1,63 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local humanoidRootPart = char:WaitForChild("HumanoidRootPart")
+
+-- Settings
+local stepDistance = 12 -- Distance to teleport per step
+local rangeThreshold = 10 -- Range threshold for stopping
+local debounceTime = 0.1 -- Delay between teleports (in seconds)
+local busy = false -- Prevents overlapping movements
+
+local function isInRange(pos1, pos2, axis)
+    local diff = math.abs(pos1[axis] - pos2[axis])
+    return diff < rangeThreshold
+end
+
+local function handleTeleport(direction)
+    if busy then return end -- Prevent overlapping movement
+    busy = true
+
+    local startCFrame = humanoidRootPart.CFrame
+    local newPosition = startCFrame.Position + direction
+
+    while true do
+        -- Teleport the humanoid
+        humanoidRootPart.CFrame = CFrame.new(newPosition)
+
+        -- Check if the player is within the range threshold
+        local currentPosition = humanoidRootPart.Position
+        if isInRange(currentPosition, newPosition, "X") and isInRange(currentPosition, newPosition, "Z") then
+            break
+        end
+
+        task.wait(debounceTime)
+    end
+
+    busy = false
+end
+
+-- Input Handling
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end -- Ignore input in GUI contexts
+    if not char or not humanoidRootPart then return end -- Safety checks
+
+    if input.KeyCode == Enum.KeyCode.W then
+        handleTeleport(Vector3.new(0, 0, -stepDistance)) -- Forward
+    elseif input.KeyCode == Enum.KeyCode.S then
+        handleTeleport(Vector3.new(0, 0, stepDistance)) -- Backward
+    elseif input.KeyCode == Enum.KeyCode.A then
+        handleTeleport(Vector3.new(-stepDistance, 0, 0)) -- Left
+    elseif input.KeyCode == Enum.KeyCode.D then
+        handleTeleport(Vector3.new(stepDistance, 0, 0)) -- Right
+    end
+end)
+
+if not char or not humanoidRootPart then
+    warn("Character or HumanoidRootPart not found. Ensure the player has loaded properly.")
+end
+
+print("TPWalk Script Loaded: Use WASD to teleport.")
