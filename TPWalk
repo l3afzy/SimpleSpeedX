@@ -55,9 +55,4 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         handleTeleport(Vector3.new(stepDistance, 0, 0)) -- Right
     end
 end)
-
-if not char or not humanoidRootPart then
-    warn("Character or HumanoidRootPart not found. Ensure the player has loaded properly.")
-end
-
 print("TPWalk Script Loaded: Use WASD to teleport.")
