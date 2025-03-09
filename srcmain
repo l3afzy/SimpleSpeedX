@@ -1,9 +1,7 @@
--- Load Fluent UI and its addons
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
 local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
 
--- Create the main UI window
 local Window = Fluent:CreateWindow({
     Title = "Fluent " .. Fluent.Version,
     SubTitle = "by dawid",
@@ -14,133 +12,88 @@ local Window = Fluent:CreateWindow({
     MinimizeKey = Enum.KeyCode.LeftControl
 })
 
--- Create two tabs: Main for our hacks and Settings for configs
 local Tabs = {
-    Main = Window:AddTab({ Title = "Main", Icon = "" }),
-    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
+    General = Window:AddTab({ Title = "General", Icon = "home" }),
+    Advanced = Window:AddTab({ Title = "Advanced", Icon = "rocket" }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" }),
+    Configuration = Window:AddTab({ Title = "Configuration", Icon = "file" })
 }
-
 local Options = Fluent.Options
 
-------------------------------
--- Movement Hacks Variables --
-------------------------------
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-
+local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local Humanoid = Character:FindFirstChildOfClass("Humanoid")
-local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+local Root = Character:WaitForChild("HumanoidRootPart")
 
-local normalSpeed = 16          -- Default walk speed
-local sprintSpeed = 30          -- Speed when sprinting (LeftShift)
--- speedHack speed will be defined by a slider (default 50)
-local stepDistance = 12         -- TP Walk: distance to teleport per step
-local rangeThreshold = 10       -- TP Walk: threshold to stop teleport loop
-local debounceTime = 0.1        -- TP Walk: delay between teleport loops
-local busy = false              -- TP Walk: prevents overlapping teleports
+local normalSpeed = 16
+local defaultSpeedHack = 50
+local defaultSprintSpeed = 30
+local defaultTPWalkDistance = 12
+local defaultCFMovementSpeed = 16
 
--- Feature toggles (states)
 local speedHackEnabled = false
 local sprintEnabled = false
 local tpWalkEnabled = false
 
--- Connection holders for sprint and TP Walk
-local sprintInputBeganConnection = nil
-local sprintInputEndedConnection = nil
-local tpWalkConnection = nil
+local sprintInputBeganConnection, sprintInputEndedConnection, tpWalkConnection
 
----------------------------------
--- Helper Functions for TP Walk --
----------------------------------
-local function isInRange(pos1, pos2, axis)
-    local diff = math.abs(pos1[axis] - pos2[axis])
-    return diff < rangeThreshold
-end
-
-local function handleTeleport(direction)
-    if busy then return end
-    busy = true
-    local startCFrame = HumanoidRootPart.CFrame
-    local newPosition = startCFrame.Position + direction
-    while true do
-        HumanoidRootPart.CFrame = CFrame.new(newPosition)
-        local currentPosition = HumanoidRootPart.Position
-        if isInRange(currentPosition, newPosition, "X") and isInRange(currentPosition, newPosition, "Z") then
-            break
-        end
-        task.wait(debounceTime)
-    end
-    busy = false
-end
-
-------------------------------------------
--- UI Elements for Movement Hack Controls
-------------------------------------------
--- Speed Hack Toggle (Overwrite WalkSpeed)
-local SpeedHackToggle = Tabs.Main:AddToggle("SpeedHackToggle", {
+---------------------------
+-- GENERAL TAB
+---------------------------
+local SpeedHackToggle = Tabs.General:AddToggle("SpeedHackToggle", {
     Title = "Speed Hack",
     Default = false,
     Description = "Override WalkSpeed with a custom value."
 })
--- Speed Hack Speed Slider
-local SpeedHackSlider = Tabs.Main:AddSlider("SpeedHackSlider", {
+local SpeedHackSlider = Tabs.General:AddSlider("SpeedHackSlider", {
     Title = "Speed Hack Value",
     Description = "Set custom WalkSpeed.",
-    Default = 50,
+    Default = defaultSpeedHack,
     Min = 16,
     Max = 100,
     Rounding = 0
 })
--- Sprint Toggle (LeftShift to sprint)
-local SprintToggle = Tabs.Main:AddToggle("SprintToggle", {
+SpeedHackToggle:OnChanged(function()
+    speedHackEnabled = Options.SpeedHackToggle.Value
+    if speedHackEnabled then
+        Humanoid.WalkSpeed = SpeedHackSlider.Value
+        Fluent:Notify({Title = "Speed Hack", Content = "Enabled (Speed: " .. SpeedHackSlider.Value .. ")", Duration = 5})
+    else
+        if not sprintEnabled then Humanoid.WalkSpeed = normalSpeed end
+        Fluent:Notify({Title = "Speed Hack", Content = "Disabled", Duration = 5})
+    end
+end)
+SpeedHackSlider:OnChanged(function(Value)
+    if Options.SpeedHackToggle.Value then
+        Humanoid.WalkSpeed = Value
+        Fluent:Notify({Title = "Speed Hack", Content = "Speed set to: " .. Value, Duration = 5})
+    end
+end)
+
+local SprintToggle = Tabs.General:AddToggle("SprintToggle", {
     Title = "Sprint",
     Default = false,
     Description = "Enable sprinting using LeftShift."
 })
--- TP Walk Toggle (WASD teleport movement)
-local TPWalkToggle = Tabs.Main:AddToggle("TPWalkToggle", {
-    Title = "TP Walk",
-    Default = false,
-    Description = "Enable teleport movement using WASD."
+local SprintSpeedSlider = Tabs.General:AddSlider("SprintSpeedSlider", {
+    Title = "Sprint Speed",
+    Description = "Set sprint speed (when LeftShift is held).",
+    Default = defaultSprintSpeed,
+    Min = 16,
+    Max = 100,
+    Rounding = 0
 })
-
---------------------------------------
--- Callbacks for Movement Controls --
---------------------------------------
--- Speed Hack: when toggled, set WalkSpeed to slider value or revert to normalSpeed
-SpeedHackToggle:OnChanged(function()
-    speedHackEnabled = Options.SpeedHackToggle.Value
-    if speedHackEnabled then
-        local newSpeed = SpeedHackSlider.Value
-        Humanoid.WalkSpeed = newSpeed
-        Fluent:Notify({Title = "Speed Hack", Content = "Enabled (Speed: " .. newSpeed .. ")"})
-    else
-        -- Only revert if sprint is not active; otherwise sprint will handle WalkSpeed
-        if not sprintEnabled then
-            Humanoid.WalkSpeed = normalSpeed
-        end
-        Fluent:Notify({Title = "Speed Hack", Content = "Disabled"})
-    end
-end)
--- When the slider is changed, update WalkSpeed if Speed Hack is enabled
-SpeedHackSlider:OnChanged(function(Value)
-    if Options.SpeedHackToggle.Value then
-        Humanoid.WalkSpeed = Value
-        Fluent:Notify({Title = "Speed Hack", Content = "Speed set to: " .. Value})
-    end
-end)
-
--- Sprint: toggle connections for LeftShift sprinting
 SprintToggle:OnChanged(function()
     sprintEnabled = Options.SprintToggle.Value
-    if sprintEnabled then
+    if sprintEnabled then -- hello skids
         if not sprintInputBeganConnection then
             sprintInputBeganConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
                 if gameProcessed then return end
                 if input.KeyCode == Enum.KeyCode.LeftShift and not Options.SpeedHackToggle.Value then
-                    Humanoid.WalkSpeed = sprintSpeed
+                    Humanoid.WalkSpeed = SprintSpeedSlider.Value
                 end
             end)
         end
@@ -152,102 +105,135 @@ SprintToggle:OnChanged(function()
                 end
             end)
         end
-        Fluent:Notify({Title = "Sprint", Content = "Enabled"})
+        Fluent:Notify({Title = "Sprint", Content = "Enabled", Duration = 5})
     else
-        if sprintInputBeganConnection then
-            sprintInputBeganConnection:Disconnect()
-            sprintInputBeganConnection = nil
-        end
-        if sprintInputEndedConnection then
-            sprintInputEndedConnection:Disconnect()
-            sprintInputEndedConnection = nil
-        end
-        -- Reset WalkSpeed only if Speed Hack is off
-        if not Options.SpeedHackToggle.Value then
-            Humanoid.WalkSpeed = normalSpeed
-        end
-        Fluent:Notify({Title = "Sprint", Content = "Disabled"})
+        if sprintInputBeganConnection then sprintInputBeganConnection:Disconnect() end
+        if sprintInputEndedConnection then sprintInputEndedConnection:Disconnect() end
+        if not Options.SpeedHackToggle.Value then Humanoid.WalkSpeed = normalSpeed end
+        Fluent:Notify({Title = "Sprint", Content = "Disabled", Duration = 5})
     end
 end)
 
--- TP Walk: toggle WASD teleport controls
+local TPWalkToggle = Tabs.General:AddToggle("TPWalkToggle", {
+    Title = "TP Walk",
+    Default = false,
+    Description = "Enable teleport movement using WASD keys."
+})
+local TPWalkDistanceSlider = Tabs.General:AddSlider("TPWalkDistanceSlider", {
+    Title = "TP Walk Distance",
+    Description = "Set teleport distance in studs.",
+    Default = defaultTPWalkDistance,
+    Min = 5,
+    Max = 50,
+    Rounding = 0
+})
 TPWalkToggle:OnChanged(function()
     tpWalkEnabled = Options.TPWalkToggle.Value
     if tpWalkEnabled then
         if not tpWalkConnection then
-            tpWalkConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+            tpWalkConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed) -- hello skids
                 if gameProcessed then return end
-                if not tpWalkEnabled then return end  -- extra check
+                if not tpWalkEnabled then return end
+                local stepDistance = TPWalkDistanceSlider.Value
                 if input.KeyCode == Enum.KeyCode.W then
-                    handleTeleport(Vector3.new(0, 0, -stepDistance))
+                    Root.CFrame = CFrame.new(Root.Position + Vector3.new(0, 0, -stepDistance))
                 elseif input.KeyCode == Enum.KeyCode.S then
-                    handleTeleport(Vector3.new(0, 0, stepDistance))
+                    Root.CFrame = CFrame.new(Root.Position + Vector3.new(0, 0, stepDistance))
                 elseif input.KeyCode == Enum.KeyCode.A then
-                    handleTeleport(Vector3.new(-stepDistance, 0, 0))
+                    Root.CFrame = CFrame.new(Root.Position + Vector3.new(-stepDistance, 0, 0))
                 elseif input.KeyCode == Enum.KeyCode.D then
-                    handleTeleport(Vector3.new(stepDistance, 0, 0))
+                    Root.CFrame = CFrame.new(Root.Position + Vector3.new(stepDistance, 0, 0))
                 end
             end)
         end
-        Fluent:Notify({Title = "TP Walk", Content = "Enabled (Use WASD to teleport)"})
+        Fluent:Notify({Title = "TP Walk", Content = "Enabled (Use WASD to teleport)", Duration = 5})
     else
-        if tpWalkConnection then
-            tpWalkConnection:Disconnect()
-            tpWalkConnection = nil
-        end
-        Fluent:Notify({Title = "TP Walk", Content = "Disabled"})
+        if tpWalkConnection then tpWalkConnection:Disconnect() end
+        Fluent:Notify({Title = "TP Walk", Content = "Disabled", Duration = 5})
     end
 end)
 
-----------------------------
--- Additional Fluent Demo --
-----------------------------
--- (Optional) Some demo UI elements provided by Fluent below
-Tabs.Main:AddParagraph({
-    Title = "Movement Hacks",
-    Content = "Toggle Speed Hack, Sprint, or TP Walk as needed."
+---------------------------
+-- ADVANCED TAB
+---------------------------
+local CFMovementToggle = Tabs.Advanced:AddToggle("CFMovementToggle", {
+    Title = "CFrame Movement",
+    Default = false,
+    Description = "Enable custom CFrame-based movement relative to the camera (disables AutoRotate)."
 })
-Tabs.Main:AddButton({
-    Title = "Test Dialog",
-    Description = "Press to see a test dialog.",
-    Callback = function()
-        Window:Dialog({
-            Title = "Test Dialog",
-            Content = "This is a dialog test.",
-            Buttons = {
-                {
-                    Title = "Confirm",
-                    Callback = function()
-                        print("Dialog confirmed.")
-                    end
-                },
-                {
-                    Title = "Cancel",
-                    Callback = function()
-                        print("Dialog cancelled.")
-                    end
-                }
-            }
-        })
-    end
+local CFMovementSpeedSlider = Tabs.Advanced:AddSlider("CFMovementSpeedSlider", {
+    Title = "CFrame Movement Speed",
+    Description = "Set movement speed for CFrame movement.",
+    Default = defaultCFMovementSpeed,
+    Min = 5,
+    Max = 100,
+    Rounding = 0
 })
 
-----------------------------
--- Setup Save & Interface --
-----------------------------
-SaveManager:SetLibrary(Fluent)
+local cfMovementConnection, cfInputBeganConnection, cfInputEndedConnection
+local cfMoveInput = {W = false, A = false, S = false, D = false}
+
+CFMovementToggle:OnChanged(function()
+    local enabled = Options.CFMovementToggle.Value
+    if enabled then
+        Humanoid.AutoRotate = false
+        cfInputBeganConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+            if gameProcessed then return end
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                local key = input.KeyCode.Name
+                if cfMoveInput[key] ~= nil then cfMoveInput[key] = true end
+            end
+        end)
+        cfInputEndedConnection = UserInputService.InputEnded:Connect(function(input, gameProcessed)
+            if gameProcessed then return end
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                local key = input.KeyCode.Name
+                if cfMoveInput[key] ~= nil then cfMoveInput[key] = false end
+            end
+        end)
+        cfMovementConnection = RunService.RenderStepped:Connect(function(deltaTime)
+            local inputVector = Vector3.new(0,0,0)
+            if cfMoveInput.W then inputVector = inputVector + Vector3.new(0,0,-1) end
+            if cfMoveInput.S then inputVector = inputVector + Vector3.new(0,0,1) end
+            if cfMoveInput.A then inputVector = inputVector + Vector3.new(-1,0,0) end
+            if cfMoveInput.D then inputVector = inputVector + Vector3.new(1,0,0) end
+            if inputVector.Magnitude > 0 then
+                inputVector = inputVector.Unit
+                local camCF = workspace.CurrentCamera.CFrame
+                local forward = Vector3.new(camCF.LookVector.X, 0, camCF.LookVector.Z)
+                if forward.Magnitude > 0 then forward = forward.Unit end
+                local right = Vector3.new(camCF.RightVector.X, 0, camCF.RightVector.Z)
+                if right.Magnitude > 0 then right = right.Unit end
+                local moveDirection = forward * (-inputVector.Z) + right * inputVector.X
+                if moveDirection.Magnitude > 0 then moveDirection = moveDirection.Unit end
+                local displacement = moveDirection * CFMovementSpeedSlider.Value * deltaTime
+                local newPosition = Root.Position + displacement
+                Root.CFrame = CFrame.new(newPosition, newPosition + moveDirection)
+            end
+        end)
+        Fluent:Notify({Title = "CFrame Movement", Content = "Enabled", Duration = 5})
+    else
+        if cfInputBeganConnection then cfInputBeganConnection:Disconnect() end
+        if cfInputEndedConnection then cfInputEndedConnection:Disconnect() end
+        if cfMovementConnection then cfMovementConnection:Disconnect() end
+        Humanoid.AutoRotate = true
+        Fluent:Notify({Title = "CFrame Movement", Content = "Disabled", Duration = 5})
+    end
+end)
+-- hello skids
+---------------------------
+-- SETTINGS & CONFIGURATION
+---------------------------
 InterfaceManager:SetLibrary(Fluent)
+InterfaceManager:SetFolder("FluentScriptHub")
+InterfaceManager:BuildInterfaceSection(Tabs.Settings)
+
+SaveManager:SetLibrary(Fluent)
 SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({})
-InterfaceManager:SetFolder("FluentScriptHub")
 SaveManager:SetFolder("FluentScriptHub/specific-game")
-InterfaceManager:BuildInterfaceSection(Tabs.Settings)
-SaveManager:BuildConfigSection(Tabs.Settings)
+SaveManager:BuildConfigSection(Tabs.Configuration)
 
 Window:SelectTab(1)
-Fluent:Notify({
-    Title = "Fluent",
-    Content = "The movement hack script has been loaded.",
-    Duration = 8
-})
+Fluent:Notify({Title = "Fluent", Content = "SimpleSpeedX Has been loaded, Enjoy!.", Duration = 5})
 SaveManager:LoadAutoloadConfig()
