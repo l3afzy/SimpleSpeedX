@@ -1,0 +1,72 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local camera = workspace.CurrentCamera
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local root = character:WaitForChild("HumanoidRootPart")
+humanoid.AutoRotate = false
+
+-- speed (stud)
+local speed = 16
+
+local moveInput = {
+    W = false,
+    A = false,
+    S = false,
+    D = false
+}
+
+local function getMoveVector()
+    local vec = Vector3.new()
+    if moveInput.W then vec = vec + Vector3.new(0, 0, -1) end
+    if moveInput.S then vec = vec + Vector3.new(0, 0, 1) end
+    if moveInput.A then vec = vec + Vector3.new(-1, 0, 0) end
+    if moveInput.D then vec = vec + Vector3.new(1, 0, 0) end
+    return vec
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        local keyName = input.KeyCode.Name
+        if moveInput[keyName] ~= nil then
+            moveInput[keyName] = true
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        local keyName = input.KeyCode.Name
+        if moveInput[keyName] ~= nil then
+            moveInput[keyName] = false
+        end
+    end
+end)
+
+RunService.RenderStepped:Connect(function(deltaTime)
+    local inputVector = getMoveVector()
+    if inputVector.Magnitude > 0 then
+        inputVector = inputVector.Unit
+
+        local camCF = camera.CFrame
+        local forward = Vector3.new(camCF.LookVector.X, 0, camCF.LookVector.Z)
+        if forward.Magnitude > 0 then forward = forward.Unit end
+        local right = Vector3.new(camCF.RightVector.X, 0, camCF.RightVector.Z)
+        if right.Magnitude > 0 then right = right.Unit end
+
+        local moveDirection = forward * (-inputVector.Z) + right * inputVector.X
+        if moveDirection.Magnitude > 0 then
+            moveDirection = moveDirection.Unit
+        end
+
+        local displacement = moveDirection * speed * deltaTime
+        local newPosition = root.Position + displacement
+
+        local newCF = CFrame.new(newPosition, newPosition + moveDirection)
+        root.CFrame = newCF
+    end
+end)
